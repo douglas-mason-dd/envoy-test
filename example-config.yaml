@@ -18,21 +18,35 @@ static_resources:
             name: local_route
             virtual_hosts:
             - name: local_service
+              request_headers_to_add:
+                - header:
+                    key: x-has-permission
+                    value: "true"
               domains: ["*"]
               routes:
               - match: { prefix: "/" }
-                route: { cluster: some_service }
+                route: { cluster: web_service }
+
           http_filters:
+          - name: envoy.filters.http.ext_authz
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthz
+              http_service:
+                  server_uri:
+                    uri: 127.0.0.1:3001
+                    cluster: ext-authz
+                    timeout: 0.25s
+              include_peer_certificate: true
           - name: envoy.filters.http.router
             typed_config:
               "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
   clusters:
-  - name: some_service
+  - name: web_service
     connect_timeout: 0.25s
     type: STATIC
     lb_policy: ROUND_ROBIN
     load_assignment:
-      cluster_name: some_service
+      cluster_name: web_service
       endpoints:
       - lb_endpoints:
         - endpoint:
@@ -40,3 +54,16 @@ static_resources:
               socket_address:
                 address: 127.0.0.1
                 port_value: 3000
+  - name: ext-authz
+    connect_timeout: 0.25s
+    type: logical_dns
+    lb_policy: round_robin
+    load_assignment:
+      cluster_name: ext-authz
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: 127.0.0.1
+                port_value: 3001
